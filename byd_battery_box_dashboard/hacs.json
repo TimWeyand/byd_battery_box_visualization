@@ -1,0 +1,7 @@
+{
+  "name": "BYD Battery Box Dashboard",
+  "homeassistant": "2025.9.0",
+  "content_in_root": false,
+  "render_readme": true,
+  "image": "https://raw.githubusercontent.com/TimWeyand/byd_battery_box_visualization/HEAD/images/preview.png"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "BYD Battery Box Visualization",
+  "homeassistant": "2025.9.0",
+  "content_in_root": false,
+  "render_readme": true,
+  "domains": ["plugin"]
+}
