@@ -1,5 +1,5 @@
 // BYD Battery Box Visualization - BatteryStand web component (static)
-const cssUrl = new URL('../styles/battery.css?v=0.0.2', import.meta.url);
+const cssUrl = new URL('../styles/battery.css?v=0.0.3', import.meta.url);
 
 export class BatteryStand extends HTMLElement {
   constructor(){ super(); this.attachShadow({mode:'open'}); }

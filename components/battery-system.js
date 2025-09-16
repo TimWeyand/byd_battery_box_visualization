@@ -1,6 +1,6 @@
 // BYD Battery Box Visualization - BatterySystem (BMU level) container
 import './battery-tower.js';
-const cssUrl = new URL('../styles/battery.css?v=0.0.2', import.meta.url);
+const cssUrl = new URL('../styles/battery.css?v=0.0.3', import.meta.url);
 
 export class BatterySystem extends HTMLElement {
   constructor(){

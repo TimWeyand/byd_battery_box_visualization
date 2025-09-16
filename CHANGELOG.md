@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.3 — Responsiveness and UX tweaks
+- Header: hide version information automatically when the tower width is below 300px (saves space on narrow cards).
+- Layout spacing: reduced vertical spacing by half between header ↔ modules, between modules, and modules ↔ stand.
+- Small-width graph fix: when a module is narrower than 256px, cell bars no longer overflow; min-width and gaps shrink and the chart clips overflow.
+- Narrow modules (<300px): start thinning bars earlier with a small gap preserved (1px) and reduced axis label size to 10px to prevent overflow around ~270px.
+- Extra-narrow modules (<256px): bars no longer disappear due to overflow; cell min-width reduced to 0 and gaps to 0, and Y-axis label font-size reduced for space.
+- Faster toggles: mV/°C and Versions now react on pointerdown for snappier interaction (less perceived lag on touch/HA).
+- Smoother animations: removed per-update keyframe triggers; height/bottom transitions now animate seamlessly without restarting.
+
 ## 0.0.2 — Visualization
 - Modern modular card with separate custom elements (components/*), shared CSS (styles/battery.css) and HA wrapper (ha/byd-battery-box-visualization.js).
 - Added a standalone test page with mock data (test/index.html).

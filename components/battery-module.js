@@ -1,7 +1,7 @@
 // BYD Battery Box Visualization - BatteryModule web component
 // Renders one physical BMS module consisting of multiple cells
 
-const cssUrl = new URL('../styles/battery.css?v=0.0.2', import.meta.url);
+const cssUrl = new URL('../styles/battery.css?v=0.0.3', import.meta.url);
 
 export class BatteryModule extends HTMLElement {
   constructor(){
@@ -210,9 +210,6 @@ export class BatteryModule extends HTMLElement {
         cur.style.transition = 'none';
         cur.style.bottom = prevBottom + '%';
         cur.style.height = prevHeight + '%';
-        // directional hint
-        if (Number(v) > Number(last)) cell.classList.add('rise');
-        else if (Number(v) < Number(last)) cell.classList.add('fall');
         // apply final in next frame to trigger transition
         requestAnimationFrame(()=>{
           cur.style.transition = 'height .6s ease, bottom .6s ease';

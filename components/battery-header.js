@@ -1,5 +1,5 @@
 // BYD Battery Box Visualization - BatteryHeader web component
-const cssUrl = new URL('../styles/battery.css?v=0.0.2', import.meta.url);
+const cssUrl = new URL('../styles/battery.css?v=0.0.3', import.meta.url);
 
 export class BatteryHeader extends HTMLElement {
   constructor(){
@@ -15,7 +15,7 @@ export class BatteryHeader extends HTMLElement {
     this._onToggle = null; // callback
     this._view = 'voltage';
   }
-  connectedCallback(){ this._render(); this._ensureCss(); }
+  connectedCallback(){ this._render(); this._ensureCss(); this._setupResizeObserver(); }
   async _ensureCss(){
     if (this._sheet) return; try{ const txt = (typeof window !== 'undefined' && window.__BYD_CSS_TEXT) ? window.__BYD_CSS_TEXT : await fetch(cssUrl).then(r=>r.text()); const s=new CSSStyleSheet(); await s.replace(txt); this.shadowRoot.adoptedStyleSheets=[s]; this._sheet=s; }catch(e){}
   }
@@ -71,9 +71,29 @@ export class BatteryHeader extends HTMLElement {
     const vBtn = r.getElementById('voltage');
     const tBtn = r.getElementById('temp');
     const ver = r.getElementById('versions');
-    vBtn?.addEventListener('click', ()=> this.showVoltage());
-    tBtn?.addEventListener('click', ()=> this.showTemperature());
-    ver?.addEventListener('click', ()=>{ this._versionsMode = this._versionsMode ? 0 : 1; this._updateVersionsText(); });
+    vBtn?.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); this.showVoltage(); });
+    tBtn?.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); this.showTemperature(); });
+    ver?.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); this._versionsMode = this._versionsMode ? 0 : 1; this._updateVersionsText(); });
+    this._applyResponsive();
+  }
+
+  _applyResponsive(){
+    const r = this.shadowRoot; if (!r) return;
+    const ver = r.getElementById('versions');
+    if (!ver) return;
+    const w = this.getBoundingClientRect().width || 0;
+    ver.style.display = w < 300 ? 'none' : '';
+  }
+
+  _setupResizeObserver(){
+    if (this._ro) return;
+    if (typeof ResizeObserver !== 'undefined'){
+      this._ro = new ResizeObserver(()=> this._applyResponsive());
+      this._ro.observe(this);
+    } else {
+      // Fallback: re-apply on window resize
+      window.addEventListener('resize', ()=> this._applyResponsive());
+    }
   }
 
   _updateVersionsText(){

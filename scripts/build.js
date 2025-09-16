@@ -1,7 +1,7 @@
 // Build script using esbuild to generate a single-file bundle for HACS
 import { build } from 'esbuild';
 
-const banner = `/* BYD Battery Box Visualization v0.0.2 - bundled single file for HACS */`;
+const banner = `/* BYD Battery Box Visualization v0.0.3 - bundled single file for HACS */`;
 
 async function run(){
   try{

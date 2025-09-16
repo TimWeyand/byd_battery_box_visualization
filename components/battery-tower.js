@@ -3,7 +3,7 @@ import './battery-header.js';
 import './battery-module.js';
 import './battery-stand.js';
 
-const cssUrl = new URL('../styles/battery.css?v=0.0.2', import.meta.url);
+const cssUrl = new URL('../styles/battery.css?v=0.0.3', import.meta.url);
 
 export class BatteryTower extends HTMLElement {
   constructor(){
