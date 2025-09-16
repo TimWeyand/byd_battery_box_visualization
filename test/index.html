@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BYD Battery Box Visualization - Test Page</title>
+  <style>
+    body{margin:0;padding:20px;background:#f3f3f5;font-family:system-ui,Arial}
+    .container{max-width:1200px;margin:0 auto}
+    h1{font-size:22px;margin:0 0 10px}
+    p{color:#444}
+    section{margin-bottom:20px}
+    .controls{display:flex;gap:10px;align-items:center;margin:10px 0 20px}
+    .controls label{display:flex;gap:8px;align-items:center}
+    button{padding:8px 12px;border-radius:8px;border:1px solid #ccc;background:#fff;cursor:pointer}
+    button:hover{background:#f6f6f6}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>BYD Battery Box Visualization - Test Page</h1>
+    <p>This page renders the custom components without Home Assistant. It is prefilled with mock data close to the integration output.</p>
+
+    <div class="controls">
+      <label><input type="checkbox" id="toggleYAxis" checked> Show Y‑axis</label>
+      <button id="randomize">Randomize data (SOC, SOH, cells, temps, power)</button>
+    </div>
+
+    <section id="stage"></section>
+  </div>
+
+  <script type="module">
+    import '../components/battery-system.js';
+    import '../components/battery-tower.js';
+    import '../components/battery-header.js';
+    import '../components/battery-module.js';
+    import '../components/battery-stand.js';
+    import { tower1, tower2, tower3, bmu, createTower, createBMU } from './mock-data.js';
+
+    const stage = document.getElementById('stage');
+    const sys = document.createElement('byd-battery-system');
+    sys.setTowers(3);
+    stage.appendChild(sys);
+
+    let towers = [tower1, tower2, tower3];
+    let bmuState = { ...bmu };
+
+    function applyData(){
+      towers.forEach((t, idx)=>{
+        const el = sys.getTower(idx+1);
+        el.setModules(t.modules);
+        el.setChartMinVoltage(t.chart.vMin); el.setChartMaxVoltage(t.chart.vMax);
+        el.setChartMinTemperature(10); el.setChartMaxTemperature(45);
+        el.setVoltage(t.voltage.map(m=>m.v));
+        el.setHistoryMaxVoltage(t.histMax.map(m=>m.v));
+        el.setHistoryMinVoltage(t.histMin.map(m=>m.v));
+        el.setCellBallancing(t.balancing.map(m=>m.b));
+        el.setTemperature(t.temps.map(m=>m.t));
+        el.setBMUPower(bmuState.power); el.setBMUVersion(bmuState.version);
+        el.setStateOfCharge(t.soc); el.setStateOfHealth(t.soh);
+        el.setBMSVersion(t.bmsVersion);
+        el.setUIMeta(`UI 0.0.2<br>modules:${t.modules}`);
+      });
+    }
+
+    applyData();
+
+    // Controls
+    const yToggle = document.getElementById('toggleYAxis');
+    yToggle.addEventListener('change', ()=>{
+      for (let i=1;i<=3;i++){
+        const el = sys.getTower(i);
+        if (!el) continue;
+        if (yToggle.checked) el.showYAxisValues(); else el.hideYAxisValues();
+      }
+    });
+
+    document.getElementById('randomize').addEventListener('click', ()=>{
+      // regenerate random dataset
+      towers = [createTower(1, towers[0].modules, 32), createTower(2, towers[1].modules, 32), createTower(3, towers[2].modules, 32)];
+      bmuState = createBMU();
+      applyData();
+    });
+  </script>
+</body>
+</html>

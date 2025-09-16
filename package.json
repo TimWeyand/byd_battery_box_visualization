@@ -1,0 +1,12 @@
+{
+  "name": "byd-battery-box-visualization",
+  "version": "0.0.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.5"
+  }
+}
