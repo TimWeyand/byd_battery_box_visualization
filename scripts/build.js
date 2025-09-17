@@ -2,7 +2,7 @@
 import { build } from 'esbuild';
 import { readFileSync } from 'fs';
 
-const uiBanner = `/* BYD Battery Box Visualization v0.0.4 - bundled single file for HACS */`;
+const uiBanner = `/* BYD Battery Box Visualization v0.0.5 - bundled single file for HACS */`;
 
 // Read and minify shared CSS once, then inline at top of bundle
 let cssText = '';

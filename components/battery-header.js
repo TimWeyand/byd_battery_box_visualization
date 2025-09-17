@@ -175,6 +175,14 @@ export class BatteryHeader extends HTMLElement {
     // If nothing configured explicitly true/false, default to all
     return keys.length ? keys : ['versions','ui','energy','efficiency'];
   }
+  _currentHeaderKey(){
+    const keys = this._enabledHeaderInfoKeys();
+    if (keys.length === 0) return '';
+    const def = (this._headerInfo?.default)||'versions';
+    const baseIdx = Math.max(0, keys.indexOf(def));
+    const idx = (baseIdx + (this._headerInfoIndex||0)) % keys.length;
+    return keys[idx];
+  }
   _getCurrentHeaderInfoText(){
     const payload = this._headerInfo?.payload || {};
     const keys = this._enabledHeaderInfoKeys();
@@ -197,12 +205,25 @@ export class BatteryHeader extends HTMLElement {
   setModuleView(v){ this._moduleView = (v==='minimal')?'minimal':(v==='none'?'none':'detailed'); this._render(); }
   setHeaderInformation(opts){
     if (opts && typeof opts === 'object'){
+      // Preserve the currently displayed info across updates from HA
+      const prevKey = this._currentHeaderKey();
       this._headerInfo = {
         default: opts.default || 'versions',
         show: opts.show || this._headerInfo.show,
         payload: opts.payload || this._headerInfo.payload
       };
-      this._headerInfoIndex = 0;
+      // Recompute index so that the previously visible key stays visible if still enabled
+      const keys = this._enabledHeaderInfoKeys();
+      const def = this._headerInfo.default || 'versions';
+      const baseIdx = Math.max(0, keys.indexOf(def));
+      if (prevKey && keys.includes(prevKey)){
+        // Index is relative to the default
+        const rel = (keys.indexOf(prevKey) - baseIdx + keys.length) % keys.length;
+        this._headerInfoIndex = rel;
+      } else {
+        // Fallback to default
+        this._headerInfoIndex = 0;
+      }
       this._render();
     }
   }

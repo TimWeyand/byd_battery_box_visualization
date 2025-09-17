@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.0.5
+- Fix: Header Information could not be toogled
+
 ## 0.0.4
 - Changing cell optics
 - Incremental update rendering: header no longer re-creates its DOM on every update; text, classes, SOC fill and values are patched in place for smoother updates.
