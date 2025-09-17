@@ -3,8 +3,6 @@ import './battery-header.js';
 import './battery-module.js';
 import './battery-stand.js';
 
-const cssUrl = new URL('../styles/battery.css?v=0.0.3', import.meta.url);
-
 export class BatteryTower extends HTMLElement {
   constructor(){
     super();
@@ -16,9 +14,11 @@ export class BatteryTower extends HTMLElement {
     this._chartV = {min:3100,max:3700};
     this._chartT = {min:0,max:60};
     this._view = 'voltage';
+    this._displayUnit = 'mV';
+    this._moduleView = 'detailed';
   }
-  connectedCallback(){ this._render(); this._ensureCss(); }
-  async _ensureCss(){ if (this._sheet) return; try{ const t=(typeof window!=='undefined'&&window.__BYD_CSS_TEXT)?window.__BYD_CSS_TEXT:await fetch(cssUrl).then(r=>r.text()); const s=new CSSStyleSheet(); await s.replace(t); this.shadowRoot.adoptedStyleSheets=[s]; this._sheet=s; }catch(e){} }
+  connectedCallback(){ this._render(); this._adoptCss(); }
+  _adoptCss(){ try{ const g=(typeof globalThis!=='undefined')?globalThis:(typeof window!=='undefined'?window:undefined); if (this._sheet || !this.shadowRoot) return; const apply=()=>{ const s=g&&g.__BYD_CSS_SHEET; if (s){ this.shadowRoot.adoptedStyleSheets=[s]; this._sheet=s; } }; if (g&&g.__BYD_CSS_SHEET){ apply(); return; } const onReady=()=>{ window.removeEventListener('byd-css-ready', onReady); apply(); }; window.addEventListener('byd-css-ready', onReady); }catch(e){} }
 
   // API required by spec
   setModules(n){ this._modules = Math.max(2, Math.min(10, Number(n)||2)); this._render(); }
@@ -39,11 +39,22 @@ export class BatteryTower extends HTMLElement {
   setBMUVersion(v){ this._header?.setBMUVersion(v); }
   setBMSVersion(v){ this._header?.setBMSVersion(v); }
   setUIMeta(v){ this._header?.setUIMeta?.(v); }
+  setTowerCapacityWh(v){ this._header?.setTowerCapacityWh?.(v); }
+  setEstimate(text){ this._header?.setEstimate?.(text); }
+  setProductName(v){ this._header?.setProductName?.(v); }
+  setDisplayUnit(unit){ this._displayUnit = unit==='V'?'V':'mV'; this._header?.setDisplayUnit?.(this._displayUnit); this._moduleEls.forEach(m=>m.setDisplayUnit?.(this._displayUnit)); }
+  setModuleView(mode){ this._moduleView = (mode==='minimal')?'minimal':(mode==='none'?'none':'detailed'); this._header?.setModuleView?.(this._moduleView); this._moduleEls.forEach(m=>m.setModuleView?.(this._moduleView)); }
+  getModuleView(){ return this._moduleView; }
+  setHeaderInformation(opts){ this._header?.setHeaderInformation?.(opts); }
+  setShowVTToggle(v){ this._header?.setShowVTToggle?.(v); }
+  setShowViewToggle(v){ this._header?.setShowViewToggle?.(v); }
   showVoltage(){ this._view='voltage'; this._header?.setView?.('voltage'); this._moduleEls.forEach(m=>m.showVoltage()); }
   showTemperature(){ this._view='temperature'; this._header?.setView?.('temperature'); this._moduleEls.forEach(m=>m.showTemperature()); }
+  getView(){ return this._view; }
   showYAxisValues(){ this._moduleEls.forEach(m=>m.showYAxisValues()); }
   hideYAxisValues(){ this._moduleEls.forEach(m=>m.hideYAxisValues()); }
   setShowGrayCaps(v){ this._moduleEls.forEach(m=>m.setShowGrayCaps?.(v)); }
+  setHeaderDisplayOptions(opts){ this._header?.setHeaderDisplayOptions?.(opts); }
 
   _eachModuleData(data, fn){
     // data can be: [ [cells...], [cells...] ] or [ {m:1,v:[...]}, ... ]
@@ -68,6 +79,8 @@ export class BatteryTower extends HTMLElement {
     `;
     this._header = r.querySelector('byd-battery-header');
     this._header.addEventListener('toggle-view', (e)=>{ e.detail.view==='temperature'?this.showTemperature():this.showVoltage(); });
+    this._header.addEventListener('toggle-unit', (e)=>{ this.setDisplayUnit(e.detail?.unit); });
+    this._header.addEventListener('toggle-module-view', (e)=>{ this.setModuleView(e.detail?.mode); });
 
     const grid = r.querySelector('.modules');
     grid.innerHTML = '';
@@ -78,6 +91,8 @@ export class BatteryTower extends HTMLElement {
       m.name = `BMS ${this._index}.${i+1}`;
       m.setChartMinVoltage(this._chartV.min); m.setChartMaxVoltage(this._chartV.max);
       m.setChartMinTemperature(this._chartT.min); m.setChartMaxTemperature(this._chartT.max);
+      m.setDisplayUnit?.(this._displayUnit);
+      m.setModuleView?.(this._moduleView);
       grid.appendChild(m);
       this._moduleEls.push(m);
     }

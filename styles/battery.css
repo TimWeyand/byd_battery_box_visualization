@@ -1,8 +1,4 @@
 /* BYD Battery Box Visualization - Shared Styles */
-:host{box-sizing:border-box;font-family:var(--ha-card-header-font-family,Roboto,system-ui,Arial);}
-*{box-sizing:border-box}
-
-/* BYD Battery Box Visualization - Shared Styles */
 :host{box-sizing:border-box;font-family:var(--ha-card-header-font-family,Roboto,system-ui,Arial);} 
 *{box-sizing:border-box}
 
@@ -10,7 +6,11 @@
 .battery-tower{display:flex;flex-direction:column;gap:4px;min-width:220px;width:100%;max-width:none;margin:0 auto}
 .header{position:relative;display:flex;flex-direction:column;gap:6px;background:linear-gradient(180deg,#585858, #383838);border-radius:10px;padding:8px 12px;color:#fff;box-shadow:inset 0 1px 2px rgba(255,255,255,.08), inset 0 -1px 2px rgba(0,0,0,.45)}
 .header .row.top{display:flex;align-items:center;gap:10px}
-.header .logo{position:relative;border:2px solid #ff3b3b;color:#ff3b3b;border-radius:999px;font-weight:700;padding:2px 8px;font-size:12px}
+.header .logo{position:relative;border:2px solid #ff3b3b;color:#ff3b3b;border-radius:999px;font-weight:700;padding:2px 8px;font-size:12px; width: 90px}
+.header .logo.nobrandInformation {width:auto;}
+.header .logo .brandname{color:#ff3b3b;float:left;margin-right:4px}
+.header .capacity{font-size:8px;line-height:1.2;color:#e0e0e0;margin-left:auto}
+.header .productname {font-size:8px;font-weight:bold;line-height:1.2;color:#e0e0e0;margin-left:auto}
 .header .soc-row{display:flex}
 .header .soc{position:relative;flex:1;height:14px;border-radius:8px;background:rgba(0,0,0,.35);overflow:hidden}
 .header .soc .fill{position:absolute;left:0;top:0;bottom:0;background:#2e7d32;min-width:0;border-radius:8px}
@@ -22,6 +22,7 @@
 .header .power{position:absolute; right: 15px; min-width:100px;text-align:right;display:flex;flex-direction:column;line-height:1.1}
 .header .power .p-label{font-weight:600;font-size:11px;opacity:.9}
 .header .power .p-value{font-weight:700;font-size:12px}
+.header .power .p-eta{font-weight:600;font-size:10px;opacity:.85}
 
 /* Always single-column modules so each module takes full width */
 .modules{display:grid;grid-template-columns:1fr;gap:4px;width:100%}
@@ -31,6 +32,28 @@
   aspect-ratio: 5 / 2; /* height = 40% of width */
   max-height:180px;
 }
+/* Minimalistic variant: 50% height */
+.battery-module.minimal{aspect-ratio:5/1; max-height:90px; padding-left:10px}
+/* keep module-name bottom-right same as detailed */
+.battery-module .mini{position:absolute; left:10px; right:8px; top:8px; bottom:8px; display:flex; flex-direction:column; gap:6px}
+.battery-module .mini-row{display:flex; align-items:center; gap:8px}
+.battery-module .mini-label{width:80px; font-size:10px; opacity:.8}
+.battery-module .mini-stat{font-size:11px; font-weight:700}
+.battery-module .hbar{flex:1; position:relative; height:10px; border-radius:6px; background:#fff; border:1px solid #e0e0e0; overflow:hidden}
+.battery-module.minimal .hbar{height:20px}
+.battery-module .hseg{position:absolute; top:0; bottom:0}
+.battery-module .hseg.cur{background: linear-gradient(to left, #000000 0%,#2e7d32 1px,#2e7d32 30%,#3b9440 70%,rgba(46,125,50,.25) 100%)}
+/* Balancing variant for minimal horizontal bar */
+.battery-module .hseg.cur.bal{background: linear-gradient(to left, #000000 0%,#1e88e5 1px,#1e88e5 30%,#3396e8 70%,rgba(30,136,229,.25) 100%)}
+.battery-module .hseg.max{background: rgba(0,0,0,.08)}
+.battery-module .hseg.greencap{background: rgba(46,125,50,.25)}
+.battery-module .hseg.bluecap{background: rgba(30,136,229,.25)}
+.battery-module .hnum{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size:10px; font-weight:700; color:#111; text-shadow:0 1px 1px rgba(255,255,255,.7)}
+.battery-module.minimal .hnum{color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.6)}
+
+/* No Data view: same visual height as header (approx.) */
+.battery-module.nodata{height:56px; max-height:none; aspect-ratio:auto; padding:8px 10px}
+
 /* No-axis variant: remove left reserve and let chart span full width */
 .battery-module.no-axis{padding-left:10px}
 .battery-module.no-axis .chart{left:8px}
@@ -47,13 +70,13 @@
 
 .cells{position:absolute;left:0;right:0;bottom:0;top:0;display:flex;align-items:flex-end;gap:2px;padding:0 6px;z-index:2}
 .cell{flex:1;min-width:4px;background:#fff;position:relative;border-radius:2px;overflow:hidden;height:100%}
-.bar.cur{position:absolute;left:0;right:0;bottom:0;background:#2e7d32;transition:height .6s ease, bottom .6s ease}
+.bar.cur{position:absolute;left:0;right:0;bottom:0;background: linear-gradient(to bottom, #000000 0%,#2e7d32 2%,#2e7d32 30%,#3b9440 70%,rgba(46,125,50,.25) 100%);transition:height .6s ease, bottom .6s ease}
 .bar.max{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.08)}
 .bar.darkcap{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.2)}
 /* Light green bottom cap between chart min and cell min */
 .bar.greencap{position:absolute;left:0;right:0;bottom:0;background:rgba(46,125,50,.25)}
 .bar.bluecap{position:absolute;left:0;right:0;bottom:0;background:rgba(30,136,229,.25)}
-.cell.balancing .bar.cur{background:#1e88e5}
+.cell.balancing .bar.cur{background: linear-gradient(to bottom, #000000 0%,#1e88e5 2%,#1e88e5 30%,#3396e8 70%,rgba(30,136,229,.25) 100%);}
 
 /* Up/Down animation hint */
 .cell.rise .bar.cur{animation:rise 0.6s ease-out}
@@ -69,10 +92,10 @@
 .soc-high .soc .fill{background:#2e7d32}
 
 /* SOC power animation stripes: right for charging (negative), left for discharging (positive) */
-.header.charge .soc .fill{background-image:repeating-linear-gradient(135deg, rgba(255,255,255,.15) 0 10px, transparent 10px 20px);animation:moveRight 2s linear infinite}
-.header.discharge .soc .fill{background-image:repeating-linear-gradient(225deg, rgba(255,255,255,.15) 0 10px, transparent 10px 20px);animation:moveLeft 2s linear infinite}
-@keyframes moveRight{to{background-position-x:40px}}
-@keyframes moveLeft{to{background-position-x:-40px}}
+.header.charge .soc .fill{background-size: 30px 220px;background-image:repeating-linear-gradient(135deg, rgba(255,255,255,.15) 0 10px, transparent 10px 20px);animation:moveRight 8s linear infinite}
+.header.discharge .soc .fill{background-size: 30px 220px;background-image:repeating-linear-gradient(225deg, rgba(255,255,255,.15) 0 10px, transparent 10px 20px);animation:moveLeft 8s linear infinite}
+@keyframes moveRight{from{background-position: 0 0;} to{background-position-x:200px}}
+@keyframes moveLeft{from{background-position: 0 0;} to{background-position-x:-200px}}
 
 /* Stand resembles BYD base with feet */
 .battery-stand{position:relative;height:22px;background:#2b2b2b;border-radius:4px;box-shadow:inset 0 1px 1px rgba(255,255,255,.08);margin-top:2px}

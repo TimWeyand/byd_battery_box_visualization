@@ -1,9 +1,9 @@
-# BYD Battery Box Visualization (Lovelace Card)
+# BYD Battery Box Visualization for Home Assistant (Lovelace Card)
 BYD HVS & BYD HVM Visualization for HACS [byd_battery_box](https://github.com/redpomodoro/byd_battery_box) (Home Assistant)
 
 Visualize BYD Battery Box modules and cells with current, min/max voltages and temperatures in Home Assistant.
 
-![Preview](./images/preview.png?raw=true "BYD Battery Box Visualization")
+![Preview](./images/preview.png?raw=true&v=0.0.4 "BYD Battery Box Visualization")
 
 ## Installation (HACS)
 
@@ -31,9 +31,11 @@ Use the Lovelace UI to add the card `custom:byd-battery-box-visualization`. A bu
 Notes:
 - The card auto-discovers entities from the `byd_battery_box` integration. There is 1 BMU and up to 3 BMS (towers).
 - Each tower renders a header (SOC bar with charge/discharge animation), modules (2–10) and a stand.
+- Header shows per‑tower capacity (from sensor.total_capacity divided by number of towers) and, when not idle, an ETA to full/empty using a 5‑minute moving average of BMU power.
 - Voltage view: per-cell bars showing current (green), optional dark gray caps to indicate chart range beyond each cell's historic min/max (disable via show_gray_caps). Balancing cells turn blue.
 - Temperature view: shows per-sensor bars; balancing does not change bar color. Toggle between mV/°C in the header.
 - Hover or click on any bar to show its value as a tooltip.
+- All custom elements are updated incrementally without full DOM re-creation to minimize flicker.
 - All custom components are fully responsive and can be tested without Home Assistant (see below).
 
 ## Test page / Development
@@ -49,3 +51,4 @@ Included mock data (test/mock-data.js):
 - Per-cell balancing flags
 - Per-sensor temperatures (half the number of cells)
 - BMU power and versions
+- Simulated total capacity (12.8 kWh) with per‑tower capacity display and ETA to full/empty shown in the header

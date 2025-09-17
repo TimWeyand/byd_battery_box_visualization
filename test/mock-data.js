@@ -14,6 +14,9 @@ function genModuleBalancing(cells=32){
 function deriveHistMax(vArr){ return vArr.map(v=> v + randInt(20, 60)); }
 function deriveHistMin(vArr){ return vArr.map(v=> v - randInt(60, 100)); }
 
+// Simulated total capacity for the entire battery stack (Wh)
+export const totalCapacityWh = 38400; // 12.8 kWh typical demo value
+
 export function createTower(id, modules=5, cells=32){
   const voltage = [];
   const temps = [];
@@ -31,10 +34,12 @@ export function createTower(id, modules=5, cells=32){
   const chart = { vMin: 3200, vMax: 3500 };
   const soc = randInt(60, 85);
   const soh = randInt(96, 100);
-  return { id, modules, voltage, histMax, histMin, temps, balancing, soc, soh, chart, bmsVersion: `1.${id-1}` };
+  // Demo model naming
+  const model = id % 2 === 0 ? 'HVM' : 'HVS';
+  return { id, modules, voltage, histMax, histMin, temps, balancing, soc, soh, chart, bmsVersion: `1.${id-1}`, model };
 }
 
-export function createBMU(){ return { power: randInt(-2000, 2000), version: '2.0' }; }
+export function createBMU(){ return { power: randInt(-2000, 2000), version: '2.0', totalCapacityWh, model: 'HVS' } ;}
 
 export const tower1 = createTower(1, 5, 32);
 export const tower2 = createTower(2, 5, 32);

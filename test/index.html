@@ -14,6 +14,15 @@
     .controls label{display:flex;gap:8px;align-items:center}
     button{padding:8px 12px;border-radius:8px;border:1px solid #ccc;background:#fff;cursor:pointer}
     button:hover{background:#f6f6f6}
+    /* Options panel for test page */
+    .options-bar{display:flex;align-items:center;gap:10px}
+    .opt-toggle{margin-left:auto}
+    .opt-panel{display:none;border:1px solid #ccc;background:#fff;padding:12px;border-radius:8px;margin:8px 0 16px}
+    .opt-grid{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px 16px}
+    .opt-group{grid-column:1/-1;border-top:1px solid #eee;padding-top:8px;margin-top:6px;font-weight:600;color:#333}
+    .opt-row{display:flex;align-items:center;gap:8px}
+    .opt-row label{min-width:200px}
+    .hidden{display:none}
   </style>
 </head>
 <body>
@@ -21,9 +30,64 @@
     <h1>BYD Battery Box Visualization - Test Page</h1>
     <p>This page renders the custom components without Home Assistant. It is prefilled with mock data close to the integration output.</p>
 
-    <div class="controls">
+    <div class="controls options-bar">
       <label><input type="checkbox" id="toggleYAxis" checked> Show Y‑axis</label>
       <button id="randomize">Randomize data (SOC, SOH, cells, temps, power)</button>
+      <button id="toggleOptions" class="opt-toggle">Options ▼</button>
+    </div>
+
+    <div id="optionsPanel" class="opt-panel">
+      <div class="opt-grid">
+        <div class="opt-group">Battery Tower</div>
+        <div class="opt-row">
+          <label for="optUnit">Unit</label>
+          <select id="optUnit">
+            <option value="mV">mV</option>
+            <option value="V">V</option>
+          </select>
+        </div>
+        <div class="opt-row"><label for="optVTToggle">Show Voltage/Temperature Toggle</label><input type="checkbox" id="optVTToggle" checked></div>
+        <div class="opt-row"><label for="optViewToggle">Show Battery Visualization Toggle (Detailed/Minimalistic)</label><input type="checkbox" id="optViewToggle"></div>
+        <div class="opt-row"><label for="optShowPower">Show Current Power</label><input type="checkbox" id="optShowPower" checked></div>
+        <div class="opt-row"><label for="optShowETA">Show Estimated Time</label><input type="checkbox" id="optShowETA" checked></div>
+        <div class="opt-row"><label for="optShowProductCapacity">Show Product and Capacity</label><input type="checkbox" id="optShowProductCapacity" checked></div>
+        
+        <div class="opt-group">Header Information</div>
+        <div class="opt-row">
+          <label for="optHeaderDefault">Default Information</label>
+          <select id="optHeaderDefault">
+            <option value="versions">BMU/BMS Versions</option>
+            <option value="ui">UI/Modules</option>
+            <option value="energy">Total Energy</option>
+            <option value="efficiency">Efficiency &amp; SoH</option>
+          </select>
+        </div>
+        <div class="opt-row"><label for="optHeaderVersions">Show BMU/BMS Versions</label><input type="checkbox" id="optHeaderVersions" checked></div>
+        <div class="opt-row"><label for="optHeaderUI">Show UI Information</label><input type="checkbox" id="optHeaderUI" checked></div>
+        <div class="opt-row"><label for="optHeaderEnergy">Show Total Energy</label><input type="checkbox" id="optHeaderEnergy" checked></div>
+        <div class="opt-row"><label for="optHeaderEfficiency">Show Efficiency &amp; State of Health</label><input type="checkbox" id="optHeaderEfficiency" checked></div>
+
+        <div class="opt-group">Graph Settings</div>
+        <div class="opt-row"><label for="optVoltageAuto">Voltage auto</label><input type="checkbox" id="optVoltageAuto" checked></div>
+        <div id="optManualV" class="opt-row hidden"><label>Voltage min/max (mV)</label>
+          <input type="number" id="optVMin" placeholder="min" style="width:100px"> 
+          <input type="number" id="optVMax" placeholder="max" style="width:100px">
+        </div>
+        <div class="opt-row"><label for="optTMin">Temperature min (°C)</label><input type="number" id="optTMin" value="10" style="width:100px"></div>
+        <div class="opt-row"><label for="optTMax">Temperature max (°C)</label><input type="number" id="optTMax" value="45" style="width:100px"></div>
+        <div class="opt-row"><label for="optGrayCaps">Show gray caps (voltage)</label><input type="checkbox" id="optGrayCaps" checked></div>
+        <div class="opt-row"><label for="optYAxis">Show Y‑axis</label><input type="checkbox" id="optYAxis" checked></div>
+
+        <div class="opt-group">Battery Module View</div>
+        <div class="opt-row">
+          <label for="optModuleView">Module View</label>
+          <select id="optModuleView">
+            <option value="detailed">Detailed Graph</option>
+            <option value="minimal">Minimalistic View</option>
+            <option value="none">No Data</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <section id="stage"></section>
@@ -35,7 +99,7 @@
     import '../components/battery-header.js';
     import '../components/battery-module.js';
     import '../components/battery-stand.js';
-    import { tower1, tower2, tower3, bmu, createTower, createBMU } from './mock-data.js';
+    import { tower1, tower2, tower3, bmu, createTower, createBMU, totalCapacityWh } from './mock-data.js';
 
     const stage = document.getElementById('stage');
     const sys = document.createElement('byd-battery-system');
@@ -45,7 +109,18 @@
     let towers = [tower1, tower2, tower3];
     let bmuState = { ...bmu };
 
+    function formatETA(secs){
+      if (!Number.isFinite(secs) || secs <= 0) return '';
+      const h = Math.floor(secs/3600);
+      const m = Math.round((secs%3600)/60);
+      return h>0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
     function applyData(){
+      const count = towers.length;
+      const totalWh = Number(bmuState.totalCapacityWh || totalCapacityWh || 12800);
+      const perTowerWh = count > 0 ? (totalWh / count) : 0;
+
       towers.forEach((t, idx)=>{
         const el = sys.getTower(idx+1);
         el.setModules(t.modules);
@@ -59,20 +134,183 @@
         el.setBMUPower(bmuState.power); el.setBMUVersion(bmuState.version);
         el.setStateOfCharge(t.soc); el.setStateOfHealth(t.soh);
         el.setBMSVersion(t.bmsVersion);
-        el.setUIMeta(`UI 0.0.3<br>modules:${t.modules}`);
+        el.setUIMeta(`UI 0.0.4<br>modules:${t.modules}`);
+        // Capacity and ETA demo
+        el.setTowerCapacityWh(perTowerWh);
+        // Demo: set product name (prefer per-tower model, fallback to BMU model)
+        if (typeof el.setProductName === 'function') el.setProductName(t.model || bmuState.model || '');
+        const pPerTower = (Number(bmuState.power)||0) / (count||1);
+        const idleThresh = 20;
+        let etaText = '';
+        if (Math.abs(pPerTower) > idleThresh && perTowerWh > 0){
+          const soc = Number(t.soc)||0;
+          if (pPerTower < 0){
+            const energyToFullWh = perTowerWh * Math.max(0, 1 - soc/100);
+            const secs = (energyToFullWh / Math.abs(pPerTower)) * 3600;
+            const txt = formatETA(secs);
+            etaText = txt ? `Full in ${txt}` : '';
+          } else if (pPerTower > 0){
+            const energyToEmptyWh = perTowerWh * Math.max(0, soc/100);
+            const secs = (energyToEmptyWh / pPerTower) * 3600;
+            const txt = formatETA(secs);
+            etaText = txt ? `Empty in ${txt}` : '';
+          }
+        }
+        el.setEstimate(etaText);
       });
     }
 
+    // Options panel logic
+    const panel = document.getElementById('optionsPanel');
+    const toggleBtn = document.getElementById('toggleOptions');
+    let panelOpen = false;
+    function setPanel(open){ panelOpen = !!open; panel.style.display = panelOpen ? 'block' : 'none'; toggleBtn.textContent = panelOpen ? 'Options ▲' : 'Options ▼'; }
+    toggleBtn.addEventListener('click', ()=> setPanel(!panelOpen));
+
+    // Grab inputs
+    const unitSel = document.getElementById('optUnit');
+    const vtToggle = document.getElementById('optVTToggle');
+    const viewToggle = document.getElementById('optViewToggle');
+    const showPower = document.getElementById('optShowPower');
+    const showETA = document.getElementById('optShowETA');
+    const showCap = document.getElementById('optShowProductCapacity');
+    const headerDefault = document.getElementById('optHeaderDefault');
+    const headerVersions = document.getElementById('optHeaderVersions');
+    const headerUI = document.getElementById('optHeaderUI');
+    const headerEnergy = document.getElementById('optHeaderEnergy');
+    const headerEfficiency = document.getElementById('optHeaderEfficiency');
+    const vAuto = document.getElementById('optVoltageAuto');
+    const vMinI = document.getElementById('optVMin');
+    const vMaxI = document.getElementById('optVMax');
+    const manualVRow = document.getElementById('optManualV');
+    const tMinI = document.getElementById('optTMin');
+    const tMaxI = document.getElementById('optTMax');
+    const grayCaps = document.getElementById('optGrayCaps');
+    const yAxisI = document.getElementById('optYAxis');
+    const moduleViewSel = document.getElementById('optModuleView');
+
+    const yTop = document.getElementById('toggleYAxis');
+
+    // Session storage helpers
+    const SS_KEY = 'byd_test_options_v1';
+    function saveOptions(opts){ try{ sessionStorage.setItem(SS_KEY, JSON.stringify(opts)); }catch(e){} }
+    function loadOptions(){
+      try{
+        const raw = sessionStorage.getItem(SS_KEY);
+        if (!raw) return;
+        const o = JSON.parse(raw);
+        if (o.unit) unitSel.value = o.unit;
+        if (typeof o.show_vt_toggle === 'boolean') vtToggle.checked = o.show_vt_toggle;
+        if (typeof o.show_view_toggle === 'boolean') viewToggle.checked = o.show_view_toggle;
+        if (typeof o.show_power === 'boolean') showPower.checked = o.show_power;
+        if (typeof o.show_eta === 'boolean') showETA.checked = o.show_eta;
+        if (typeof o.show_product_capacity === 'boolean') showCap.checked = o.show_product_capacity;
+        if (o.header_information_default) headerDefault.value = o.header_information_default;
+        if (typeof o.show_header_versions === 'boolean') headerVersions.checked = o.show_header_versions;
+        if (typeof o.show_header_ui === 'boolean') headerUI.checked = o.show_header_ui;
+        if (typeof o.show_header_energy === 'boolean') headerEnergy.checked = o.show_header_energy;
+        if (typeof o.show_header_efficiency === 'boolean') headerEfficiency.checked = o.show_header_efficiency;
+        if (typeof o.voltage_auto === 'boolean') vAuto.checked = o.voltage_auto;
+        manualVRow.classList.toggle('hidden', vAuto.checked);
+        if (o.voltage_min !== undefined) vMinI.value = String(o.voltage_min);
+        if (o.voltage_max !== undefined) vMaxI.value = String(o.voltage_max);
+        if (o.temp_min !== undefined) tMinI.value = String(o.temp_min);
+        if (o.temp_max !== undefined) tMaxI.value = String(o.temp_max);
+        if (typeof o.show_gray_caps === 'boolean') grayCaps.checked = o.show_gray_caps;
+        if (typeof o.show_y_axis === 'boolean') yAxisI.checked = o.show_y_axis;
+        if (o.module_view) moduleViewSel.value = o.module_view;
+      }catch(e){}
+    }
+
+    function readOptions(){
+      manualVRow.classList.toggle('hidden', vAuto.checked);
+      return {
+        unit: unitSel.value,
+        show_vt_toggle: vtToggle.checked,
+        show_view_toggle: viewToggle.checked,
+        show_power: showPower.checked,
+        show_eta: showETA.checked,
+        show_product_capacity: showCap.checked,
+        header_information_default: headerDefault.value,
+        show_header_versions: headerVersions.checked,
+        show_header_ui: headerUI.checked,
+        show_header_energy: headerEnergy.checked,
+        show_header_efficiency: headerEfficiency.checked,
+        voltage_auto: vAuto.checked,
+        voltage_min: vAuto.checked ? undefined : (vMinI.value===''?undefined:Number(vMinI.value)),
+        voltage_max: vAuto.checked ? undefined : (vMaxI.value===''?undefined:Number(vMaxI.value)),
+        temp_min: tMinI.value===''?undefined:Number(tMinI.value),
+        temp_max: tMaxI.value===''?undefined:Number(tMaxI.value),
+        show_gray_caps: grayCaps.checked,
+        show_y_axis: yAxisI.checked,
+        module_view: moduleViewSel.value
+      };
+    }
+
+    function applyOptions(){
+      const opts = readOptions();
+      // Persist to session storage
+      saveOptions(opts);
+      // sync top quick Y-axis toggle
+      yTop.checked = !!opts.show_y_axis;
+      for (let i=0;i<3;i++){
+        const el = sys.getTower(i+1);
+        if (!el) continue;
+        // Unit & header toggles
+        el.setDisplayUnit?.(opts.unit);
+        el.setShowVTToggle?.(opts.show_vt_toggle);
+        el.setShowViewToggle?.(opts.show_view_toggle);
+        el.setHeaderDisplayOptions?.({ showPower: opts.show_power, showETA: opts.show_eta, showProductCapacity: opts.show_product_capacity });
+        // Module view
+        el.setModuleView?.(opts.module_view);
+        // Header information (payload with demo values)
+        const tw = towers[i];
+        const effTxt = `Efficiency: ${Math.round(95 + Math.random()*5)}%<br>State of Health: ${Math.round(Number(tw?.soh)||0)}%`;
+        const energyTxt = `Charged: ${Math.round(120 + Math.random()*30)} kWh<br>Discharged: ${Math.round(80 + Math.random()*30)} kWh`;
+        el.setHeaderInformation?.({
+          default: opts.header_information_default,
+          show: {
+            versions: opts.show_header_versions,
+            ui: opts.show_header_ui,
+            energy: opts.show_header_energy,
+            efficiency: opts.show_header_efficiency,
+          },
+          payload: { energyText: energyTxt, effText: effTxt }
+        });
+        // Graph settings
+        if (opts.show_y_axis) el.showYAxisValues(); else el.hideYAxisValues();
+        el.setShowGrayCaps?.(opts.show_gray_caps);
+        // Voltage range
+        if (opts.voltage_auto){
+          const t = towers[i];
+          el.setChartMinVoltage(t.chart.vMin); el.setChartMaxVoltage(t.chart.vMax);
+        } else {
+          if (Number.isFinite(opts.voltage_min)) el.setChartMinVoltage(opts.voltage_min);
+          if (Number.isFinite(opts.voltage_max)) el.setChartMaxVoltage(opts.voltage_max);
+        }
+        // Temperature range
+        el.setChartMinTemperature(Number.isFinite(opts.temp_min)?opts.temp_min:10);
+        el.setChartMaxTemperature(Number.isFinite(opts.temp_max)?opts.temp_max:45);
+      }
+    }
+
+    // Initialize form listeners
+    panel.querySelectorAll('input, select').forEach(el =>{
+      const handler = ()=> applyOptions();
+      el.addEventListener('change', handler);
+      el.addEventListener('input', handler);
+    });
+
+    // Load saved options, apply options first (so initial view is respected), then apply data
+    loadOptions();
+    applyOptions();
     applyData();
 
     // Controls
     const yToggle = document.getElementById('toggleYAxis');
     yToggle.addEventListener('change', ()=>{
-      for (let i=1;i<=3;i++){
-        const el = sys.getTower(i);
-        if (!el) continue;
-        if (yToggle.checked) el.showYAxisValues(); else el.hideYAxisValues();
-      }
+      yAxisI.checked = yToggle.checked; // keep in sync
+      applyOptions();
     });
 
     document.getElementById('randomize').addEventListener('click', ()=>{
@@ -80,6 +318,7 @@
       towers = [createTower(1, towers[0].modules, 32), createTower(2, towers[1].modules, 32), createTower(3, towers[2].modules, 32)];
       bmuState = createBMU();
       applyData();
+      applyOptions();
     });
   </script>
 </body>

@@ -1,6 +1,6 @@
 // BYD Battery Box Visualization - BatterySystem (BMU level) container
 import './battery-tower.js';
-const cssUrl = new URL('../styles/battery.css?v=0.0.3', import.meta.url);
+const cssUrl = new URL('../styles/battery.css?v=0.0.4', import.meta.url);
 
 export class BatterySystem extends HTMLElement {
   constructor(){
@@ -10,7 +10,23 @@ export class BatterySystem extends HTMLElement {
     this._towerEls = [];
   }
   connectedCallback(){ this._render(); this._ensureCss(); }
-  async _ensureCss(){ if (this._sheet) return; try{ const t=(typeof window!=='undefined'&&window.__BYD_CSS_TEXT)?window.__BYD_CSS_TEXT:await fetch(cssUrl).then(r=>r.text()); const s=new CSSStyleSheet(); await s.replace(t); this.shadowRoot.adoptedStyleSheets=[s]; this._sheet=s; }catch(e){} }
+  async _ensureCss(){
+    if (this._sheet) return;
+    try{
+      const g = (typeof globalThis!=='undefined')?globalThis:(typeof window!=='undefined'?window:undefined);
+      let s = g && g.__BYD_CSS_SHEET;
+      if (!s){
+        const t = (g && g.__BYD_CSS_TEXT) ? g.__BYD_CSS_TEXT : await fetch(cssUrl).then(r=>r.text());
+        s = new CSSStyleSheet();
+        await s.replace(t);
+        if (g) g.__BYD_CSS_SHEET = s;
+        // Notify any child components waiting to adopt the shared stylesheet
+        try{ window.dispatchEvent(new Event('byd-css-ready')); }catch(_){ /* ignore */ }
+      }
+      this.shadowRoot.adoptedStyleSheets = [s];
+      this._sheet = s;
+    }catch(e){}
+  }
 
   // API
   setTowers(n){ this._towers = Math.max(1, Math.min(3, Number(n)||1)); this._render(); }

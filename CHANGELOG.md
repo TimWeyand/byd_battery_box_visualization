@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.4
+- Changing cell optics
+- Incremental update rendering: header no longer re-creates its DOM on every update; text, classes, SOC fill and values are patched in place for smoother updates.
+- Header now shows per‑tower capacity (sensor.total_capacity divided by number of towers) and, when not idle, an ETA to full/empty based on a 5‑minute average of BMU power.
+- HA wrapper computes a rolling 5‑minute power average and passes capacity/ETA to each tower header.
+- Test page updated to simulate total capacity and to display per‑tower capacity and ETA based on BMU power.
+- New module view "Minimal" - shows temperature value centered in the temperature bar; voltage bar displays a blue gradient when any cell is balancing (horizontal, right→left).
+- New module view: "No Data" – renders only the module name at header-like height (for compact dashboards or placeholder state).
+- Performance: CSS is now guaranteed to be loaded exactly once by the battery-system component. Child elements (header, tower, module, stand) do not fetch or re-create CSS; they adopt a shared Constructable StyleSheet instance exposed globally. The system dispatches a `byd-css-ready` event once CSS is prepared so children can adopt without polling.
+- ETA now hides immediately when the system becomes idle (instantaneous power ≈ 0 W). We use the 5‑minute average only for rate smoothing when charging/discharging; idle detection uses the current power reading.
+
 ## 0.0.3 — Responsiveness and UX tweaks
 - Header: hide version information automatically when the tower width is below 300px (saves space on narrow cards).
 - Layout spacing: reduced vertical spacing by half between header ↔ modules, between modules, and modules ↔ stand.

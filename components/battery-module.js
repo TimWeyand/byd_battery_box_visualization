@@ -1,8 +1,6 @@
 // BYD Battery Box Visualization - BatteryModule web component
 // Renders one physical BMS module consisting of multiple cells
 
-const cssUrl = new URL('../styles/battery.css?v=0.0.3', import.meta.url);
-
 export class BatteryModule extends HTMLElement {
   constructor(){
     super();
@@ -18,22 +16,22 @@ export class BatteryModule extends HTMLElement {
     this._chart = { vMin: 3100, vMax: 3700, tMin: 0, tMax: 60 };
     this._last = { voltage: [], temp: [], histMin: [], histMax: [] };
     this._tip = { showUntil: 0, x: 0, y: 0, text: '' };
-    this._showGrayCaps = true; // render dark gray caps above/below cell min/max in voltage view
+    this._showGrayCaps = true; // controls light-gray area from current to cell max (voltage view)
+    this._displayUnit = 'mV'; // 'mV' | 'V'
+    this._moduleView = 'detailed'; // 'detailed' | 'minimal'
   }
 
-  connectedCallback(){ this._render(); this._ensureCss(); }
+  connectedCallback(){ this._render(); this._adoptCss(); }
 
-  async _ensureCss(){
-    if (this._sheet) return;
+  _adoptCss(){
     try{
-      const txt = (typeof window !== 'undefined' && window.__BYD_CSS_TEXT) ? window.__BYD_CSS_TEXT : await fetch(cssUrl).then(r=>r.text());
-      const sheet = new CSSStyleSheet();
-      await sheet.replace(txt);
-      this.shadowRoot.adoptedStyleSheets = [sheet];
-      this._sheet = sheet;
-    }catch(e){
-      // ignore; component will still render, just without shared css
-    }
+      if (this._sheet || !this.shadowRoot) return;
+      const g = (typeof globalThis !== 'undefined') ? globalThis : (typeof window !== 'undefined' ? window : undefined);
+      const apply = ()=>{ const s = g && g.__BYD_CSS_SHEET; if (s){ this.shadowRoot.adoptedStyleSheets = [s]; this._sheet = s; } };
+      if (g && g.__BYD_CSS_SHEET){ apply(); return; }
+      const onReady = ()=>{ window.removeEventListener('byd-css-ready', onReady); apply(); };
+      window.addEventListener('byd-css-ready', onReady);
+    }catch(e){}
   }
 
   // API methods
@@ -47,6 +45,8 @@ export class BatteryModule extends HTMLElement {
   setChartMinTemperature(v){ this._chart.tMin = Number(v)||this._chart.tMin; this._render(); }
   setCellBallancing(arr){ this._balancing = Array.isArray(arr)?arr:[]; this._render(); }
   setShowGrayCaps(v){ this._showGrayCaps = v !== false; this._render(); }
+  setDisplayUnit(u){ this._displayUnit = u === 'V' ? 'V' : 'mV'; this._render(); }
+  setModuleView(mode){ this._moduleView = (mode==='minimal')?'minimal':(mode==='none'?'none':'detailed'); this._render(); }
   setStateOfCharge(){} // not used on module level
   setStateOfHealth(){}
   setEfficiency(){}
@@ -76,10 +76,11 @@ export class BatteryModule extends HTMLElement {
 
   _getAxis(){
     if (this._view === 'temperature') return {min:this._chart.tMin, max:this._chart.tMax, unit:'°C'};
-    // voltage
+    // voltage (stored in mV); display unit can be 'mV' or 'V'
     const min = this._chart.vMin ?? Math.min(...this._histMin, ...this._voltage);
     const max = this._chart.vMax ?? Math.max(...this._histMax, ...this._voltage);
-    return {min, max, unit:'mV'};
+    const unit = this._displayUnit === 'V' ? 'V' : 'mV';
+    return {min, max, unit};
   }
 
   _render(){
@@ -88,7 +89,68 @@ export class BatteryModule extends HTMLElement {
     const axis = this._getAxis();
     const isTemp = this._view === 'temperature';
 
-    // Build structure
+    // No Data view
+    if (this._moduleView === 'none'){
+      root.innerHTML = `
+        <div class="battery-module nodata no-axis">
+          <div class="module-name">${this._name||''}</div>
+        </div>
+      `;
+      return;
+    }
+    // Minimalistic view branch
+    if (this._moduleView === 'minimal'){
+      const vVals = this._voltage.filter(v=>Number.isFinite(Number(v))).map(Number);
+      const tVals = this._temp.filter(v=>Number.isFinite(Number(v))).map(Number);
+      const med = (arr)=>{ if (!arr.length) return 0; const a=[...arr].sort((a,b)=>a-b); const mid=Math.floor(a.length/2); return a.length%2?a[mid]:(a[mid-1]+a[mid])/2; };
+      const vMed = med(vVals);
+      const hmMed = med(this._histMin.filter(v=>Number.isFinite(Number(v))).map(Number));
+      const hMMed = med(this._histMax.filter(v=>Number.isFinite(Number(v))).map(Number));
+      const tMed = med(tVals);
+      // Horizontal scales for voltage and temperature
+      const toXV = (v)=>{ const min = this._chart.vMin, max = this._chart.vMax; if (!Number.isFinite(v)||max===min) return 0; const c=Math.min(max,Math.max(min,Number(v))); return (c-min)/(max-min)*100; };
+      const toXT = (v)=>{ const min = this._chart.tMin, max = this._chart.tMax; if (!Number.isFinite(v)||max===min) return 0; const c=Math.min(max,Math.max(min,Number(v))); return (c-min)/(max-min)*100; };
+      // Fudge baseline if very small delta
+      let fudgeDown = 0; { const delta = Math.max(0, vMed - hmMed); if (delta < 20) fudgeDown = 150; }
+      const formatVal = (raw)=>{
+        if (this._displayUnit === 'V') return `${(Number(raw)/1000).toLocaleString(undefined,{minimumFractionDigits:3,maximumFractionDigits:3})} V`;
+        return `${Math.round(Number(raw))} mV`;
+      };
+      const startPct = toXV(hmMed - fudgeDown);
+      const endPct = toXV(vMed);
+      const widthPct = Math.max(0, endPct - startPct);
+      const centerPct = startPct + widthPct/2;
+      root.innerHTML = `
+        <div class="battery-module minimal no-axis">
+          <div class="mini">
+            <div class="mini-row">
+              <div class="mini-label">Voltage</div>
+              <div class="hbar">
+                <div class="hseg ${this._balancing?.some(b=>b===1||b===true)?'bluecap':'greencap'}" style="left:0;width:${Math.max(0,toXV(hmMed))}%;"></div>
+                <div class="hseg cur${this._balancing?.some(b=>b===1||b===true)?' bal':''}" style="left:${startPct}%;width:${widthPct}%;"></div>
+                ${this._showGrayCaps?`<div class=\"hseg max\" style=\"left:${endPct}%;width:${Math.max(0,toXV(hMMed)-endPct)}%\"></div>`:''}
+                <div class="hnum" style="left:${centerPct}%; color:#fff;">${formatVal(vMed)}</div>
+              </div>
+            </div>
+            <div class="mini-row">
+              <div class="mini-label">Temperature</div>
+              <div class="hbar">
+                <div class="hseg cur" style="left:0;width:${Math.max(0,toXT(tMed))}%;"></div>
+                <div class="hnum" style="left:${(Math.max(0,toXT(tMed)))/2}%; color:#fff;">${Number(tMed).toLocaleString(undefined,{maximumFractionDigits:1})} °C</div>
+              </div>
+            </div>
+            <div class="mini-row">
+              <div class="mini-label">Cell Balancing</div>
+              <div class="mini-stat">${(this._balancing||[]).filter(b=>b===1||b===true).length}</div>
+            </div>
+          </div>
+          <div class="module-name">${this._name||''}</div>
+        </div>
+      `;
+      return;
+    }
+
+    // Detailed view structure
     root.innerHTML = `
       <div class="battery-module ${this._yAxis ? '' : 'no-axis'}">
         <div class="axis" style="display:${this._yAxis?'block':'none'}"></div>
@@ -139,6 +201,12 @@ export class BatteryModule extends HTMLElement {
       return (clamped - min) / (max - min) * 100; // percent
     };
 
+    const formatVal = (raw)=>{
+      if (isTemp) return `${Number(raw).toLocaleString(undefined,{maximumFractionDigits:1})} °C`;
+      if (this._displayUnit === 'V') return `${(Number(raw)/1000).toLocaleString(undefined,{minimumFractionDigits:3,maximumFractionDigits:3})} V`;
+      return `${Math.round(Number(raw))} mV`;
+    };
+
     // If current and minimal voltages are almost identical across this module,
     // lower the effective baseline by 150 mV so green bars remain visible.
     let fudgeDown = 0;
@@ -164,15 +232,15 @@ export class BatteryModule extends HTMLElement {
         const hM = Number(this._histMax[i]);
         if (Number.isFinite(hm)) vMin = hm;
         if (Number.isFinite(hM)) vMax = hM;
-        // bottom area between chart min and cell min
-        if (this._showGrayCaps && Number.isFinite(vMin) && vMin > min){
+        // bottom area between chart min and cell min (always shown; blue when balancing)
+        if (Number.isFinite(vMin) && vMin > min){
           const isBal = this._balancing && (this._balancing[i]===true || this._balancing[i]===1);
           const bottomCap = document.createElement('div'); bottomCap.className='bar ' + (isBal ? 'bluecap' : 'greencap'); bottomCap.style.height = toH(vMin)+'%';
           cell.appendChild(bottomCap);
         }
         // light gray area from current value up to cell max
         const hCurLocal = toH(v);
-        if (Number.isFinite(vMax)){
+        if (this._showGrayCaps && Number.isFinite(vMax)){
           const hCellMax = toH(vMax);
           const postH = Math.max(0, hCellMax - hCurLocal);
           if (postH > 0){
@@ -229,11 +297,10 @@ export class BatteryModule extends HTMLElement {
       cell.appendChild(cur);
 
       // Tooltip interactions: hover and click (near cursor or hovered cell)
-      const valueText = `${v} ${axis.unit}`;
       const place = (ev)=>{
         const chartRect = chart.getBoundingClientRect();
         tooltip.style.display = 'block';
-        tooltip.textContent = valueText;
+        tooltip.textContent = formatVal(v);
         // force measure
         const tipW = tooltip.offsetWidth || 50;
         const tipH = tooltip.offsetHeight || 20;
@@ -302,7 +369,7 @@ export class BatteryModule extends HTMLElement {
         const chartRect = chart.getBoundingClientRect();
         const val = values[idx];
         tooltip.style.display = 'block';
-        tooltip.textContent = `${val} ${axis.unit}`;
+        tooltip.textContent = formatVal(val);
         const tipW = tooltip.offsetWidth || 50;
         const tipH = tooltip.offsetHeight || 20;
         let x = (ev?.clientX ?? (chartRect.left + chartRect.width/2)) - chartRect.left + 10;
@@ -333,8 +400,16 @@ export class BatteryModule extends HTMLElement {
       const tick = document.createElement('div'); tick.className='tick';
       tick.style.top = `${(1-y)*100}%`;
       const label = document.createElement('div'); label.className='label';
-      const val = axis.min + (axis.max - axis.min) * y;
-      label.textContent = `${Math.round(val)} ${axis.unit}`;
+      const raw = axis.min + (axis.max - axis.min) * y;
+      let txt;
+      if (axis.unit === '°C'){
+        txt = `${Number(raw).toLocaleString(undefined,{maximumFractionDigits:1})} ${axis.unit}`;
+      } else if (axis.unit === 'V'){
+        txt = `${(Number(raw)/1000).toLocaleString(undefined,{minimumFractionDigits:3,maximumFractionDigits:3})} V`;
+      } else {
+        txt = `${Math.round(Number(raw))} mV`;
+      }
+      label.textContent = txt;
       label.style.top = `${(1-y)*100}%`;
       el.appendChild(tick); el.appendChild(label);
     }
