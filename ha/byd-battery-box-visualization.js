@@ -6,16 +6,68 @@ import '../components/battery-header.js';
 import '../components/battery-module.js';
 import '../components/battery-stand.js';
 
-const UI_VERSION = '0.0.5';
+const UI_VERSION = '0.0.6';
 
 class BYDBatteryBoxVisualization extends HTMLElement {
   static getConfigElement(){ return document.createElement('byd-battery-box-visualization-editor'); }
   static getStubConfig(){ return { voltage_auto: true, temp_min: 10, temp_max: 45, show_y_axis: true, show_gray_caps: true, unit: 'mV', default_view: 'voltage', module_view: 'detailed', show_vt_toggle: true, show_view_toggle: false, show_power: true, show_eta: true, show_product_capacity: true, header_information_default: 'versions', show_header_versions: true, show_header_ui: true, show_header_energy: true, show_header_efficiency: true }; }
 
   setConfig(config){ this._config = config || {}; }
-  set hass(hass){ this._hass = hass; this._render(); }
+  set hass(hass){
+    // Performance: only render if relevant BYD sensors changed
+    const prevHass = this._hass;
+    this._hass = hass;
+
+    // Always render first few times to ensure initial data is captured
+    // (HA sends state in multiple batches during startup)
+    this._renderCount = (this._renderCount || 0) + 1;
+    if (this._renderCount <= 5) {
+      this._render();
+      return;
+    }
+
+    // After initial renders, only re-render if BYD sensors changed
+    const relevant = /^sensor\.(bmu_|bms_|total_capacity)/;
+    const prevStates = prevHass?.states || {};
+    const newStates = hass.states || {};
+
+    let changed = false;
+    for (const key of Object.keys(newStates)) {
+      if (relevant.test(key)) {
+        const prev = prevStates[key];
+        const curr = newStates[key];
+        if (!prev || prev.state !== curr.state || prev.last_updated !== curr.last_updated) {
+          changed = true;
+          break;
+        }
+      }
+    }
+
+    if (changed) {
+      this._render();
+    }
+  }
 
   getCardSize(){ return 8; }
+
+  disconnectedCallback() {
+    // Cleanup visibility handler
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+      this._visibilityHandler = null;
+    }
+
+    // Cleanup power sample tracking
+    if (this._sampleInterval) {
+      clearInterval(this._sampleInterval);
+      this._sampleInterval = null;
+    }
+
+    // Clear cached data
+    this._powerSamples = null;
+    this._entities = null;
+    this._devices = null;
+  }
 
   _pushPowerSample(p){
     const now = Date.now();
@@ -47,13 +99,21 @@ class BYDBatteryBoxVisualization extends HTMLElement {
     // Initialize shadow root and static DOM once to avoid flicker
     const root = this.shadowRoot || this.attachShadow({mode:'open'});
     if (!this._el){
+      // Style - allow natural height
+      const style = document.createElement('style');
+      style.textContent = `
+        :host { display: block; }
+        ha-card { }
+        .byd-container { padding: 10px; }
+      `;
+      root.appendChild(style);
+
       const card = document.createElement('ha-card');
       const container = document.createElement('div');
-      container.style.padding = '10px';
+      container.className = 'byd-container';
       const system = document.createElement('byd-battery-system');
       container.appendChild(system);
       card.appendChild(container);
-      root.innerHTML = '';
       root.appendChild(card);
       this._el = { card, container, system };
       this._lastTowerCount = 0;
@@ -404,10 +464,41 @@ class BYDBatteryBoxVisualization extends HTMLElement {
 // Registry helpers for reading device model (to show product name)
 BYDBatteryBoxVisualization.prototype._ensureRegistries = async function(){
   if (this._entities && this._devices) return;
-  try{
-    this._entities = await this._hass.callWS({type:'config/entity_registry/list'});
-    this._devices = await this._hass.callWS({type:'config/device_registry/list'});
-  }catch(e){ /* ignore */ }
+
+  // Validate hass and callWS availability
+  if (!this._hass) {
+    console.debug('[BYD] _ensureRegistries: hass not available');
+    return;
+  }
+  if (typeof this._hass.callWS !== 'function') {
+    console.debug('[BYD] _ensureRegistries: callWS is not a function');
+    return;
+  }
+
+  try {
+    const entitiesResponse = await this._hass.callWS({type:'config/entity_registry/list'});
+    const devicesResponse = await this._hass.callWS({type:'config/device_registry/list'});
+
+    // Validate responses are arrays before assigning
+    if (Array.isArray(entitiesResponse)) {
+      this._entities = entitiesResponse;
+    } else {
+      console.warn('[BYD] _ensureRegistries: entities response is not an array', typeof entitiesResponse);
+      this._entities = [];
+    }
+
+    if (Array.isArray(devicesResponse)) {
+      this._devices = devicesResponse;
+    } else {
+      console.warn('[BYD] _ensureRegistries: devices response is not an array', typeof devicesResponse);
+      this._devices = [];
+    }
+  } catch(e) {
+    console.debug('[BYD] _ensureRegistries: WebSocket call failed', e?.message || e);
+    // Initialize as empty arrays to prevent repeated failed calls
+    this._entities = this._entities || [];
+    this._devices = this._devices || [];
+  }
 };
 BYDBatteryBoxVisualization.prototype._getModelForEntityId = function(entityId){
   if (!entityId || !Array.isArray(this._entities) || !Array.isArray(this._devices)) return '';

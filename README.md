@@ -1,9 +1,16 @@
 # BYD Battery Box Visualization for Home Assistant (Lovelace Card)
-BYD HVS & BYD HVM Visualization for HACS [byd_battery_box](https://github.com/redpomodoro/byd_battery_box) (Home Assistant)
+
+[![CI](https://github.com/TimWeyand/byd_battery_box_visualization/actions/workflows/ci.yml/badge.svg)](https://github.com/TimWeyand/byd_battery_box_visualization/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/TimWeyand/byd_battery_box_visualization)](https://github.com/TimWeyand/byd_battery_box_visualization/releases/latest)
+[![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
+[![License](https://img.shields.io/github/license/TimWeyand/byd_battery_box_visualization)](https://github.com/TimWeyand/byd_battery_box_visualization/blob/main/LICENSE)
+[![GitHub Issues](https://img.shields.io/github/issues/TimWeyand/byd_battery_box_visualization)](https://github.com/TimWeyand/byd_battery_box_visualization/issues)
+
+BYD HVS & BYD HVM Visualization for HACS [byd_battery_box](https://github.com/TimWeyand/byd_battery_box) (Home Assistant)
 
 Visualize BYD Battery Box modules and cells with current, min/max voltages and temperatures in Home Assistant.
 
-![Preview](./images/preview.png?raw=true&v=0.0.4 "BYD Battery Box Visualization")
+![Preview](./images/preview.png?raw=true&v=0.0.6 "BYD Battery Box Visualization")
 
 ## Installation (HACS)
 

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.0.6 — Performance, CI/CD & Memory Management
+- **Performance**: Major performance improvements for dashboards with many battery modules (8+)
+  - Debounced rendering: Max 2 updates/second instead of immediate render on every data change
+  - Dirty-flag system: Only renders when data actually changed
+  - DOM caching: DOM is built once, then only values are patched (no more innerHTML rebuilds)
+  - Value comparison in setters: Prevents unnecessary render cycles
+- **Memory Management**: Comprehensive cleanup to prevent memory leaks
+  - Added `disconnectedCallback()` to HA-Wrapper with full cleanup (visibility handler, intervals, cached data)
+  - Added `disconnectedCallback()` to `battery-stand.js` with CSS-Ready handler cleanup
+  - Improved CSS-Ready handler tracking in all components
+- **Robustness**: WebSocket Registry validation improvements
+  - Validates `hass.callWS` availability before calling
+  - Validates API responses are arrays before using
+  - Fallback to empty arrays on errors to prevent crashes
+  - Improved error logging for debugging
+- **Critical Fix**: Fixed race condition causing empty charts on initial page load
+  - First render now executes immediately without debounce delay
+  - Data arriving during pending initial render cancels and reschedules with new data
+- **Visibility Optimization**: Background tabs no longer waste CPU cycles - rendering deferred until tab becomes visible
+- **CI/CD**: New GitHub Actions workflow with:
+  - HACS validation
+  - Automatic version bumping (patch level)
+  - Automatic Git tagging
+  - GitHub Release creation with bundle artifact
+- **Build**: Version is now read from package.json automatically
+- **Docs**: Added comprehensive CLAUDE.md for AI assistants and developers
+- **README**: Added badges for CI status, release version, HACS, license, and issues
+
 ## 0.0.5
 - Fix: Header Information could not be toogled
 

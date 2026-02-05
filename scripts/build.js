@@ -2,7 +2,11 @@
 import { build } from 'esbuild';
 import { readFileSync } from 'fs';
 
-const uiBanner = `/* BYD Battery Box Visualization v0.0.5 - bundled single file for HACS */`;
+// Read version from package.json to keep it in sync
+const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+const VERSION = pkg.version || '0.0.0';
+
+const uiBanner = `/* BYD Battery Box Visualization v${VERSION} - bundled single file for HACS */`;
 
 // Read and minify shared CSS once, then inline at top of bundle
 let cssText = '';
@@ -38,7 +42,7 @@ async function run(){
       drop: ['console','debugger'],
       logLevel: 'info',
     });
-    console.log('Built byd-battery-box-visualization.js');
+    console.log(`Built byd-battery-box-visualization.js (v${VERSION})`);
   }catch(e){
     console.error(e);
     process.exit(1);

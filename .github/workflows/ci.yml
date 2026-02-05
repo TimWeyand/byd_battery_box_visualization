@@ -1,0 +1,221 @@
+name: CI & Release
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ─── Code Quality Checks (blocking) ───────────────────────────
+
+  build:
+    name: Build & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install deps
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm i; fi
+      - name: Build bundle
+        run: npm run build
+      - name: Check bundle is up to date
+        run: |
+          if ! git diff --exit-code byd-battery-box-visualization.js; then
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "::error::Bundle is out of date! Please run 'npm run build' and commit the updated bundle."
+              exit 1
+            else
+              echo "::warning::Bundle is out of date. Will be updated by release job."
+            fi
+          fi
+
+  # ─── Integration Metadata Checks (blocking) ───────────────────
+
+  hacs-validation:
+    name: HACS Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: plugin
+
+  # ─── Version Bump & Release (only on main, after all checks pass) ──
+
+  release:
+    name: Version Bump & Release
+    needs: [build, hacs-validation]
+    # Only run on push to main, never on PRs
+    # Skip if this commit was already a version bump (recursion guard)
+    if: >-
+      github.event_name == 'push' &&
+      !contains(github.event.head_commit.message, '[skip-version]') &&
+      !contains(github.event.head_commit.message, 'chore: bump version') &&
+      !contains(github.event.head_commit.message, 'chore(build): js bundle')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm i; fi
+
+      - name: Check if version was already bumped
+        id: check
+        run: |
+          # Read current version from package.json
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+
+          # Calculate what the new version would be
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+
+          # Check if tag for the NEW version already exists
+          if git rev-parse "$NEW_VERSION" >/dev/null 2>&1; then
+            echo "Tag $NEW_VERSION already exists - skipping release"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if tag for the CURRENT version already exists on this exact commit
+          CURRENT_TAG="$CURRENT_VERSION"
+          if git rev-parse "$CURRENT_TAG" >/dev/null 2>&1; then
+            TAG_COMMIT=$(git rev-list -n 1 "$CURRENT_TAG")
+            if [ "$TAG_COMMIT" = "${{ github.sha }}" ]; then
+              echo "Current commit already tagged as $CURRENT_TAG - skipping release"
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "Last tag: ${LAST_TAG:-none (first release)}"
+
+          RANGE="HEAD"
+          if [ -n "$LAST_TAG" ]; then
+            RANGE="${LAST_TAG}..HEAD"
+          fi
+
+          # Generate changelog with full commit messages
+          COMMITS=""
+          while IFS= read -r hash; do
+            [ -z "$hash" ] && continue
+            subject=$(git log -1 --format="%s" "$hash")
+            # Skip version bump commits and build commits
+            echo "$subject" | grep -qE "chore: bump version|\[skip-version\]|chore\(build\)" && continue
+            body=$(git log -1 --format="%b" "$hash" | sed '/^$/d; /^Co-Authored-By/d; s/^/  /')
+            COMMITS="${COMMITS}- ${subject} (${hash:0:7})"$'\n'
+            if [ -n "$body" ]; then
+              COMMITS="${COMMITS}${body}"$'\n'
+            fi
+          done < <(git log --format="%H" --no-merges "$RANGE" | head -20)
+
+          if [ -z "$COMMITS" ]; then
+            COMMITS="- Maintenance release"
+          fi
+
+          # Write changelog to file
+          {
+            echo "## Changes"
+            echo ""
+            echo "$COMMITS"
+            echo ""
+            echo "---"
+            echo "*Automatically released after CI passed on \`main\` branch.*"
+          } > /tmp/release_notes.md
+
+          echo "--- Release Notes ---"
+          cat /tmp/release_notes.md
+
+      - name: Bump patch version
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          NEW_VERSION="${{ steps.check.outputs.new_version }}"
+          CURRENT_VERSION="${{ steps.check.outputs.current_version }}"
+
+          echo "Bumping $CURRENT_VERSION -> $NEW_VERSION"
+
+          # Update all version references using portable Node.js
+          node -e "
+          const fs = require('fs');
+          const CURRENT = '$CURRENT_VERSION';
+          const NEW = '$NEW_VERSION';
+
+          // 1. Update package.json
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.version = NEW;
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+
+          // 2. Update ha/byd-battery-box-visualization.js (UI_VERSION)
+          let haFile = fs.readFileSync('ha/byd-battery-box-visualization.js', 'utf8');
+          haFile = haFile.replace(
+            \"const UI_VERSION = '\" + CURRENT + \"'\",
+            \"const UI_VERSION = '\" + NEW + \"'\"
+          );
+          fs.writeFileSync('ha/byd-battery-box-visualization.js', haFile);
+
+          // 3. Update battery-system.js CSS URL version parameter
+          let sysFile = fs.readFileSync('components/battery-system.js', 'utf8');
+          sysFile = sysFile.replace(
+            'battery.css?v=' + CURRENT,
+            'battery.css?v=' + NEW
+          );
+          fs.writeFileSync('components/battery-system.js', sysFile);
+
+          console.log('Updated versions: ' + CURRENT + ' -> ' + NEW);
+          "
+
+          # Rebuild the bundle with new version
+          npm run build
+
+      - name: Commit, tag, and push
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          NEW_VERSION="${{ steps.check.outputs.new_version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add package.json ha/byd-battery-box-visualization.js components/battery-system.js byd-battery-box-visualization.js
+          git diff --staged --quiet && { echo "No changes to commit"; exit 0; }
+
+          git commit -m "chore: bump version to $NEW_VERSION [skip-version]"
+          git tag "$NEW_VERSION"
+          git push
+          git push --tags
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.check.outputs.new_version }}"
+          CURRENT_VERSION="${{ steps.check.outputs.current_version }}"
+          gh release create "$NEW_VERSION" \
+            --title "$NEW_VERSION" \
+            --notes-file /tmp/release_notes.md \
+            byd-battery-box-visualization.js

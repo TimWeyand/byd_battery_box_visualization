@@ -1,6 +1,9 @@
 // BYD Battery Box Visualization - BatterySystem (BMU level) container
+// Performance optimized: debounced rendering
 import './battery-tower.js';
-const cssUrl = new URL('../styles/battery.css?v=0.0.4', import.meta.url);
+const cssUrl = new URL('../styles/battery.css?v=0.0.7', import.meta.url);
+
+const RENDER_DEBOUNCE_MS = 500; // 2 updates per second
 
 export class BatterySystem extends HTMLElement {
   constructor(){
@@ -8,8 +11,78 @@ export class BatterySystem extends HTMLElement {
     this.attachShadow({mode:'open'});
     this._towers = 1; // 1..3
     this._towerEls = [];
+
+    // Performance: render scheduling
+    this._renderScheduled = false;
+    this._renderFrame = null;
+    this._renderTimeout = null; // Store setTimeout ID for cleanup
+    this._lastRenderTime = 0;
+    this._dirty = true;
   }
-  connectedCallback(){ this._render(); this._ensureCss(); }
+  connectedCallback(){
+    this._scheduleRender();
+    this._ensureCss();
+    // Guard: cleanup existing handler if remounted
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+    }
+    // Listen for visibility changes to render when tab becomes visible
+    this._visibilityHandler = () => {
+      if (document.visibilityState === 'visible' && this._dirty) {
+        this._renderScheduled = false; // Force-reset for new render cycle
+        this._scheduleRender();
+      }
+    };
+    document.addEventListener('visibilitychange', this._visibilityHandler);
+  }
+
+  disconnectedCallback(){
+    if (this._renderTimeout) {
+      clearTimeout(this._renderTimeout);
+      this._renderTimeout = null;
+    }
+    if (this._renderFrame) {
+      cancelAnimationFrame(this._renderFrame);
+      this._renderFrame = null;
+    }
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+      this._visibilityHandler = null;
+    }
+    this._renderScheduled = false;
+  }
+
+  // Mark data as changed and schedule render (only if tab is visible)
+  _markDirty(){
+    this._dirty = true;
+    if (document.visibilityState === 'visible') {
+      this._scheduleRender();
+    }
+    // If not visible, _dirty flag is set and render will happen when tab becomes visible
+  }
+
+  _scheduleRender(){
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    const now = performance.now();
+    const elapsed = now - this._lastRenderTime;
+    if (elapsed >= RENDER_DEBOUNCE_MS) {
+      this._renderFrame = requestAnimationFrame(() => this._doRender());
+    } else {
+      this._renderTimeout = setTimeout(() => {
+        this._renderTimeout = null;
+        this._renderFrame = requestAnimationFrame(() => this._doRender());
+      }, RENDER_DEBOUNCE_MS - elapsed);
+    }
+  }
+
+  _doRender(){
+    this._renderScheduled = false;
+    this._lastRenderTime = performance.now();
+    if (!this._dirty) return;
+    this._dirty = false;
+    this._render();
+  }
   async _ensureCss(){
     if (this._sheet) return;
     try{
@@ -29,7 +102,23 @@ export class BatterySystem extends HTMLElement {
   }
 
   // API
-  setTowers(n){ this._towers = Math.max(1, Math.min(3, Number(n)||1)); this._render(); }
+  setTowers(n){
+    const v = Math.max(1, Math.min(3, Number(n)||1));
+    if (this._towers !== v) {
+      this._towers = v;
+      // First tower change: render immediately (synchronously) so towers are ready for data
+      if (!this._initialTowersSet) {
+        this._initialTowersSet = true;
+        this._dirty = true;
+        this._renderScheduled = true; // Prevent parallel render cycles
+        this._render();
+        this._renderScheduled = false;
+        this._lastRenderTime = performance.now();
+      } else {
+        this._markDirty();
+      }
+    }
+  }
   getTower(i){ return this._towerEls[i-1]; }
 
   // convenience proxies

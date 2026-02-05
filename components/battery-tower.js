@@ -1,7 +1,10 @@
 // BYD Battery Box Visualization - BatteryTower component
+// Performance optimized: debounced rendering
 import './battery-header.js';
 import './battery-module.js';
 import './battery-stand.js';
+
+const RENDER_DEBOUNCE_MS = 500; // 2 updates per second
 
 export class BatteryTower extends HTMLElement {
   constructor(){
@@ -16,22 +19,124 @@ export class BatteryTower extends HTMLElement {
     this._view = 'voltage';
     this._displayUnit = 'mV';
     this._moduleView = 'detailed';
+
+    // Cache for data that arrives before modules are created
+    this._pendingData = {
+      voltage: null,
+      histMax: null,
+      histMin: null,
+      balancing: null,
+      temps: null
+    };
+
+    // Performance: render scheduling
+    this._renderScheduled = false;
+    this._renderFrame = null;
+    this._renderTimeout = null; // Store setTimeout ID for cleanup
+    this._lastRenderTime = 0;
+    this._cssReadyHandler = null;
+    this._dirty = true;
   }
-  connectedCallback(){ this._render(); this._adoptCss(); }
-  _adoptCss(){ try{ const g=(typeof globalThis!=='undefined')?globalThis:(typeof window!=='undefined'?window:undefined); if (this._sheet || !this.shadowRoot) return; const apply=()=>{ const s=g&&g.__BYD_CSS_SHEET; if (s){ this.shadowRoot.adoptedStyleSheets=[s]; this._sheet=s; } }; if (g&&g.__BYD_CSS_SHEET){ apply(); return; } const onReady=()=>{ window.removeEventListener('byd-css-ready', onReady); apply(); }; window.addEventListener('byd-css-ready', onReady); }catch(e){} }
+  connectedCallback(){
+    this._scheduleRender();
+    this._adoptCss();
+    // Guard: cleanup existing handler if remounted
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+    }
+    // Listen for visibility changes to render when tab becomes visible
+    this._visibilityHandler = () => {
+      if (document.visibilityState === 'visible' && this._dirty) {
+        this._renderScheduled = false; // Force-reset for new render cycle
+        this._scheduleRender();
+      }
+    };
+    document.addEventListener('visibilitychange', this._visibilityHandler);
+  }
+
+  // Mark data as changed and schedule render (only if tab is visible)
+  _markDirty(){
+    this._dirty = true;
+    if (document.visibilityState === 'visible') {
+      this._scheduleRender();
+    }
+    // If not visible, _dirty flag is set and render will happen when tab becomes visible
+  }
+
+  disconnectedCallback(){
+    if (this._renderTimeout) {
+      clearTimeout(this._renderTimeout);
+      this._renderTimeout = null;
+    }
+    if (this._renderFrame) {
+      cancelAnimationFrame(this._renderFrame);
+      this._renderFrame = null;
+    }
+    if (this._cssReadyHandler) {
+      window.removeEventListener('byd-css-ready', this._cssReadyHandler);
+      this._cssReadyHandler = null;
+    }
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+      this._visibilityHandler = null;
+    }
+    this._renderScheduled = false;
+  }
+
+  _scheduleRender(){
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    const now = performance.now();
+    const elapsed = now - this._lastRenderTime;
+    if (elapsed >= RENDER_DEBOUNCE_MS) {
+      this._renderFrame = requestAnimationFrame(() => this._doRender());
+    } else {
+      this._renderTimeout = setTimeout(() => {
+        this._renderTimeout = null;
+        this._renderFrame = requestAnimationFrame(() => this._doRender());
+      }, RENDER_DEBOUNCE_MS - elapsed);
+    }
+  }
+
+  _doRender(){
+    this._renderScheduled = false;
+    this._lastRenderTime = performance.now();
+    if (!this._dirty) return;
+    this._dirty = false;
+    this._render();
+  }
+
+  _adoptCss(){ try{ const g=(typeof globalThis!=='undefined')?globalThis:(typeof window!=='undefined'?window:undefined); if (this._sheet || !this.shadowRoot) return; const apply=()=>{ const s=g&&g.__BYD_CSS_SHEET; if (s){ this.shadowRoot.adoptedStyleSheets=[s]; this._sheet=s; } }; if (g&&g.__BYD_CSS_SHEET){ apply(); return; } this._cssReadyHandler=()=>{ window.removeEventListener('byd-css-ready', this._cssReadyHandler); this._cssReadyHandler=null; apply(); }; window.addEventListener('byd-css-ready', this._cssReadyHandler); }catch(e){} }
 
   // API required by spec
-  setModules(n){ this._modules = Math.max(2, Math.min(10, Number(n)||2)); this._render(); }
+  setModules(n){
+    const v = Math.max(2, Math.min(10, Number(n)||2));
+    if (this._modules !== v) {
+      this._modules = v;
+      // First module change: render immediately (synchronously) so modules are ready for data
+      // Subsequent changes: use debounced rendering for performance
+      if (!this._initialModulesSet) {
+        this._initialModulesSet = true;
+        this._dirty = true;
+        this._renderScheduled = true; // Prevent parallel render cycles
+        this._render();
+        this._renderScheduled = false;
+        this._lastRenderTime = performance.now();
+      } else {
+        this._markDirty();
+      }
+    }
+  }
   getModulesCount(){ return this._modules; }
-  setVoltage(data){ this._eachModuleData(data, (el, arr)=> el.setVoltage(arr)); }
-  setHistoryMaxVoltage(data){ this._eachModuleData(data, (el, arr)=> el.setHistoryMaxVoltage(arr)); }
-  setHistoryMinVoltage(data){ this._eachModuleData(data, (el, arr)=> el.setHistoryMinVoltage(arr)); }
+  setVoltage(data){ this._pendingData.voltage = data; this._eachModuleData(data, (el, arr)=> el.setVoltage(arr)); }
+  setHistoryMaxVoltage(data){ this._pendingData.histMax = data; this._eachModuleData(data, (el, arr)=> el.setHistoryMaxVoltage(arr)); }
+  setHistoryMinVoltage(data){ this._pendingData.histMin = data; this._eachModuleData(data, (el, arr)=> el.setHistoryMinVoltage(arr)); }
   setChartMaxVoltage(v){ this._chartV.max = Number(v)||this._chartV.max; this._moduleEls.forEach(m=>m.setChartMaxVoltage(this._chartV.max)); }
   setChartMinVoltage(v){ this._chartV.min = Number(v)||this._chartV.min; this._moduleEls.forEach(m=>m.setChartMinVoltage(this._chartV.min)); }
-  setTemperature(data){ this._eachModuleData(data, (el, arr)=> el.setTemperature(arr)); }
+  setTemperature(data){ this._pendingData.temps = data; this._eachModuleData(data, (el, arr)=> el.setTemperature(arr)); }
   setChartMaxTemperature(v){ this._chartT.max = Number(v)||this._chartT.max; this._moduleEls.forEach(m=>m.setChartMaxTemperature(this._chartT.max)); }
   setChartMinTemperature(v){ this._chartT.min = Number(v)||this._chartT.min; this._moduleEls.forEach(m=>m.setChartMinTemperature(this._chartT.min)); }
-  setCellBallancing(data){ this._eachModuleData(data, (el, arr)=> el.setCellBallancing(arr)); }
+  setCellBallancing(data){ this._pendingData.balancing = data; this._eachModuleData(data, (el, arr)=> el.setCellBallancing(arr)); }
   setStateOfCharge(v){ this._header?.setStateOfCharge(v); }
   setStateOfHealth(v){ this._header?.setStateOfHealth(v); }
   setEfficiency(v){}
@@ -96,6 +201,15 @@ export class BatteryTower extends HTMLElement {
       grid.appendChild(m);
       this._moduleEls.push(m);
     }
+
+    // Apply any pending data that arrived before modules were created
+    if (this._pendingData.voltage) this._eachModuleData(this._pendingData.voltage, (el, arr) => el.setVoltage(arr));
+    if (this._pendingData.histMax) this._eachModuleData(this._pendingData.histMax, (el, arr) => el.setHistoryMaxVoltage(arr));
+    if (this._pendingData.histMin) this._eachModuleData(this._pendingData.histMin, (el, arr) => el.setHistoryMinVoltage(arr));
+    if (this._pendingData.balancing) this._eachModuleData(this._pendingData.balancing, (el, arr) => el.setCellBallancing(arr));
+    if (this._pendingData.temps) this._eachModuleData(this._pendingData.temps, (el, arr) => el.setTemperature(arr));
+    // Clear pending data after applying to prevent stale data on re-render
+    this._pendingData = { voltage: null, histMax: null, histMin: null, balancing: null, temps: null };
   }
 }
 

@@ -1,5 +1,5 @@
 /* BYD Battery Box Visualization - Shared Styles */
-:host{box-sizing:border-box;font-family:var(--ha-card-header-font-family,Roboto,system-ui,Arial);} 
+:host{box-sizing:border-box;font-family:var(--ha-card-header-font-family,Roboto,system-ui,Arial);display:block;}
 *{box-sizing:border-box}
 
 /* Tower container fills available width */

@@ -1,4 +1,8 @@
 // BYD Battery Box Visualization - BatteryHeader web component
+// Performance optimized: debounced rendering
+
+const RENDER_DEBOUNCE_MS = 500; // 2 updates per second
+
 export class BatteryHeader extends HTMLElement {
   constructor(){
     super();
@@ -21,8 +25,91 @@ export class BatteryHeader extends HTMLElement {
     this._showPower = true; this._showETA = true; this._showProductCapacity = true;
     this._headerInfo = { default: 'versions', show: { versions:true, ui:true, energy:true, efficiency:true }, payload: { versionsText:'', uiText:'', energyText:'', effText:'' } };
     this._headerInfoIndex = 0;
+
+    // Performance: render scheduling
+    this._renderScheduled = false;
+    this._renderFrame = null;
+    this._renderTimeout = null; // Store setTimeout ID for cleanup
+    this._lastRenderTime = 0;
+    this._cssReadyHandler = null;
+    this._dirty = true;
   }
-  connectedCallback(){ this._render(); this._adoptCss(); this._setupResizeObserver(); }
+  connectedCallback(){
+    this._scheduleRender();
+    this._adoptCss();
+    this._setupResizeObserver();
+    // Guard: cleanup existing handler if remounted
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+    }
+    // Re-render when tab becomes visible again
+    this._visibilityHandler = () => {
+      if (document.visibilityState === 'visible' && this._dirty) {
+        this._renderScheduled = false;
+        this._scheduleRender();
+      }
+    };
+    document.addEventListener('visibilitychange', this._visibilityHandler);
+  }
+
+  disconnectedCallback(){
+    if (this._renderTimeout) {
+      clearTimeout(this._renderTimeout);
+      this._renderTimeout = null;
+    }
+    if (this._renderFrame) {
+      cancelAnimationFrame(this._renderFrame);
+      this._renderFrame = null;
+    }
+    if (this._ro) {
+      this._ro.disconnect();
+      this._ro = null;
+    }
+    if (this._resizeHandler) {
+      window.removeEventListener('resize', this._resizeHandler);
+      this._resizeHandler = null;
+    }
+    if (this._cssReadyHandler) {
+      window.removeEventListener('byd-css-ready', this._cssReadyHandler);
+      this._cssReadyHandler = null;
+    }
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+      this._visibilityHandler = null;
+    }
+    this._renderScheduled = false;
+  }
+
+  // Mark data as changed and schedule render (only if tab is visible)
+  _markDirty(){
+    this._dirty = true;
+    if (document.visibilityState === 'visible') {
+      this._scheduleRender();
+    }
+  }
+
+  _scheduleRender(){
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    const now = performance.now();
+    const elapsed = now - this._lastRenderTime;
+    if (elapsed >= RENDER_DEBOUNCE_MS) {
+      this._renderFrame = requestAnimationFrame(() => this._doRender());
+    } else {
+      this._renderTimeout = setTimeout(() => {
+        this._renderTimeout = null;
+        this._renderFrame = requestAnimationFrame(() => this._doRender());
+      }, RENDER_DEBOUNCE_MS - elapsed);
+    }
+  }
+
+  _doRender(){
+    this._renderScheduled = false;
+    this._lastRenderTime = performance.now();
+    if (!this._dirty) return;
+    this._dirty = false;
+    this._render();
+  }
   _adoptCss(){
     try{
       const g = (typeof globalThis !== 'undefined') ? globalThis : (typeof window !== 'undefined' ? window : undefined);
@@ -32,19 +119,18 @@ export class BatteryHeader extends HTMLElement {
         if (s && this.shadowRoot){ this.shadowRoot.adoptedStyleSheets = [s]; this._sheet = s; }
       };
       if (g && g.__BYD_CSS_SHEET){ apply(); return; }
-      // wait for system to prepare stylesheet
-      const onReady = ()=>{ window.removeEventListener('byd-css-ready', onReady); apply(); };
-      window.addEventListener('byd-css-ready', onReady);
+      this._cssReadyHandler = ()=>{ window.removeEventListener('byd-css-ready', this._cssReadyHandler); this._cssReadyHandler = null; apply(); };
+      window.addEventListener('byd-css-ready', this._cssReadyHandler);
     }catch(e){}
   }
 
-  // API
-  setBMUPower(v){ this._bmuPower = Number(v)||0; this._render(); }
-  setBMUVersion(v){ this._bmuVersion = v??''; this._render(); }
-  setBMSVersion(v){ this._bmsVersion = v??''; this._render(); }
-  setUIMeta(v){ this._uiMeta = v??''; this._render(); }
-  setStateOfCharge(v){ this._soc = Number(v)||0; this._render(); }
-  setStateOfHealth(v){ this._soh = Number(v)||0; this._render(); }
+  // API - only mark dirty if value actually changed
+  setBMUPower(v){ const n = Number(v)||0; if (this._bmuPower !== n) { this._bmuPower = n; this._markDirty(); } }
+  setBMUVersion(v){ const s = v??''; if (this._bmuVersion !== s) { this._bmuVersion = s; this._markDirty(); } }
+  setBMSVersion(v){ const s = v??''; if (this._bmsVersion !== s) { this._bmsVersion = s; this._markDirty(); } }
+  setUIMeta(v){ const s = v??''; if (this._uiMeta !== s) { this._uiMeta = s; this._markDirty(); } }
+  setStateOfCharge(v){ const n = Number(v)||0; if (this._soc !== n) { this._soc = n; this._markDirty(); } }
+  setStateOfHealth(v){ const n = Number(v)||0; if (this._soh !== n) { this._soh = n; this._markDirty(); } }
   setTowerCapacityWh(v){ this._towerCapacityWh = Number(v)||0; this._updateCapacity(); this._applyResponsive(); }
   setEstimate(text){ this._etaText = text||''; this._updateETA(); }
   setProductName(name){ this._productName = name || ''; this._updateProductName(); }
@@ -53,15 +139,13 @@ export class BatteryHeader extends HTMLElement {
     const v = view === 'temperature' ? 'temperature' : 'voltage';
     if (this._view !== v){
       this._view = v;
-      this._render();
-    } else {
-      // still update UI to reflect state (e.g., chips)
-      this._render();
+      this._markDirty();
     }
+    // No else - don't render if nothing changed
   }
   setDisplayUnit(unit){
     const u = unit === 'V' ? 'V' : 'mV';
-    if (this._displayUnit !== u){ this._displayUnit = u; this._render(); }
+    if (this._displayUnit !== u){ this._displayUnit = u; this._markDirty(); }
   }
   showVoltage(){ this.setView('voltage'); this.dispatchEvent(new CustomEvent('toggle-view', {detail:{view:'voltage'}})); }
   showTemperature(){ this.setView('temperature'); this.dispatchEvent(new CustomEvent('toggle-view', {detail:{view:'temperature'}})); }
@@ -142,7 +226,7 @@ export class BatteryHeader extends HTMLElement {
     const info = r.getElementById('header_information');
     unitBtn?.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); this.showVoltage(); });
     tBtn?.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); this.showTemperature(); });
-    viewBtn?.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); if (!this._showViewToggle) return; this._moduleView = (this._moduleView==='minimal')?'detailed':'minimal'; this.dispatchEvent(new CustomEvent('toggle-module-view', {detail:{mode:this._moduleView}})); this._render(); });
+    viewBtn?.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); if (!this._showViewToggle) return; this._moduleView = (this._moduleView==='minimal')?'detailed':'minimal'; this.dispatchEvent(new CustomEvent('toggle-module-view', {detail:{mode:this._moduleView}})); this._markDirty(); });
     info?.addEventListener('pointerdown', (ev)=>{ ev.preventDefault(); ev.stopPropagation(); const keys = this._enabledHeaderInfoKeys(); if (keys.length<=1) return; this._headerInfoIndex = (this._headerInfoIndex+1)%keys.length; const infoEl = this.shadowRoot.getElementById('header_information'); if (infoEl) infoEl.innerHTML = this._getCurrentHeaderInfoText(); });
     this._updateCapacity();
     this._updateETA();
@@ -163,8 +247,9 @@ export class BatteryHeader extends HTMLElement {
       this._ro = new ResizeObserver(()=> this._applyResponsive());
       this._ro.observe(this);
     } else {
-      // Fallback: re-apply on window resize
-      window.addEventListener('resize', ()=> this._applyResponsive());
+      // Fallback: re-apply on window resize (store handler for cleanup)
+      this._resizeHandler = () => this._applyResponsive();
+      window.addEventListener('resize', this._resizeHandler);
     }
   }
 
@@ -200,9 +285,9 @@ export class BatteryHeader extends HTMLElement {
     if (k === 'efficiency') return payload.effText || '';
     return '';
   }
-  setShowVTToggle(v){ this._showVTToggle = v !== false; this._render(); }
-  setShowViewToggle(v){ this._showViewToggle = !!v; this._render(); }
-  setModuleView(v){ this._moduleView = (v==='minimal')?'minimal':(v==='none'?'none':'detailed'); this._render(); }
+  setShowVTToggle(v){ const n = v !== false; if (this._showVTToggle !== n) { this._showVTToggle = n; this._markDirty(); } }
+  setShowViewToggle(v){ const n = !!v; if (this._showViewToggle !== n) { this._showViewToggle = n; this._markDirty(); } }
+  setModuleView(v){ const n = (v==='minimal')?'minimal':(v==='none'?'none':'detailed'); if (this._moduleView !== n) { this._moduleView = n; this._markDirty(); } }
   setHeaderInformation(opts){
     if (opts && typeof opts === 'object'){
       // Preserve the currently displayed info across updates from HA
@@ -224,15 +309,16 @@ export class BatteryHeader extends HTMLElement {
         // Fallback to default
         this._headerInfoIndex = 0;
       }
-      this._render();
+      this._markDirty();
     }
   }
   setHeaderDisplayOptions(opts){
     if (opts && typeof opts === 'object'){
-      if (opts.showPower !== undefined) this._showPower = !!opts.showPower;
-      if (opts.showETA !== undefined) this._showETA = !!opts.showETA;
-      if (opts.showProductCapacity !== undefined) this._showProductCapacity = !!opts.showProductCapacity;
-      this._render();
+      let changed = false;
+      if (opts.showPower !== undefined && this._showPower !== !!opts.showPower) { this._showPower = !!opts.showPower; changed = true; }
+      if (opts.showETA !== undefined && this._showETA !== !!opts.showETA) { this._showETA = !!opts.showETA; changed = true; }
+      if (opts.showProductCapacity !== undefined && this._showProductCapacity !== !!opts.showProductCapacity) { this._showProductCapacity = !!opts.showProductCapacity; changed = true; }
+      if (changed) this._markDirty();
     }
   }
 
