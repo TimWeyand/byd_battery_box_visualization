@@ -6,7 +6,7 @@ import '../components/battery-header.js';
 import '../components/battery-module.js';
 import '../components/battery-stand.js';
 
-const UI_VERSION = '0.0.6';
+const UI_VERSION = '0.0.7';
 
 class BYDBatteryBoxVisualization extends HTMLElement {
   static getConfigElement(){ return document.createElement('byd-battery-box-visualization-editor'); }
